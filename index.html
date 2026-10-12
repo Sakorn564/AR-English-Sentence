@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR English Sentence Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- MediaPipe Hands & Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .active-slot {
+            animation: pulse-ring 1.5s infinite ease-in-out;
+        }
+
+        body { background:#080d25; }
+        #canvasContainer { background:radial-gradient(ellipse at top,#263b72 0%,#10142f 48%,#080d20 100%); }
+        #webcam { opacity:.34; }
+        .glass-panel { background:linear-gradient(135deg,rgba(23,34,75,.88),rgba(35,26,75,.82)); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); border:1px solid rgba(255,255,255,.2); box-shadow:0 18px 50px rgba(0,0,0,.25),inset 0 1px rgba(255,255,255,.08); }
+        #uiLayer { padding:clamp(12px,2vw,28px); gap:18px; }
+        header { gap:18px; min-height:84px; }
+        header > div:last-child { gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+        header > div:last-child > div { border-radius:16px; padding:10px 16px; white-space:nowrap; }
+        #gamePlayArea { padding:112px 290px 22px 0; gap:22px; overflow:visible; justify-content:space-between; }
+        #thaiQuestionCard { max-width:650px; padding:20px 26px; border-radius:24px; background:linear-gradient(135deg,rgba(18,28,67,.95),rgba(67,35,104,.9)); }
+        #thaiPromptText { font-size:clamp(24px,2.4vw,36px); margin:5px 0; }
+        #feedbackText { font-size:14px; min-height:22px; }
+        #wordCardsPoolContainer { width:100%; max-width:940px; min-height:230px; flex:1 1 230px; border-radius:28px; border:1px dashed rgba(255,255,255,.18); background:rgba(9,15,42,.25); margin:0; overflow:visible; }
+        #dropSlotsContainer { max-width:940px; width:100%; min-height:156px; padding:18px 22px; gap:clamp(12px,1.4vw,22px); border-radius:28px; background:linear-gradient(135deg,rgba(15,25,62,.94),rgba(38,30,74,.9)); }
+        #dashboardPanel { top:126px; right:clamp(12px,2vw,28px); bottom:26px; width:252px; padding:18px; border-radius:24px; background:linear-gradient(180deg,rgba(19,29,69,.97),rgba(26,24,63,.96)); }
+        #dashboardLevelsList { display:flex; flex-direction:column; gap:12px; padding:4px 2px 8px; }
+        #dashboardLevelsList > div { padding:13px 12px; min-height:58px; border-radius:16px; white-space:normal; gap:8px; line-height:1.35; border:1px solid rgba(255,255,255,.12); transition:transform .2s ease; }
+        #dashboardLevelsList > div:hover { transform:translateX(-3px); }
+        [data-card-id] { width:clamp(96px,8vw,126px)!important; height:clamp(124px,11vw,156px)!important; border-radius:22px!important; padding:10px!important; box-shadow:0 14px 30px rgba(0,0,0,.28)!important; transition:transform .22s ease,box-shadow .22s ease!important; }
+        [data-card-id] img { width:100%!important; height:78px!important; border-radius:14px!important; }
+        [id^="slot-"] { width:clamp(88px,7.4vw,112px)!important; height:122px!important; border-radius:20px!important; }
+        #modalOverlay { background:rgba(5,8,24,.8); backdrop-filter:blur(12px); }
+        #startScreen,#messageModal { background:linear-gradient(145deg,rgba(25,38,88,.99),rgba(65,31,100,.99)); border-radius:30px; border:1px solid rgba(255,255,255,.22); }
+        #startBtn,#modalNextBtn { border-radius:18px; }
+        @media(max-width:900px) {
+          #uiLayer{padding:10px;gap:10px} header{align-items:flex-start;flex-wrap:wrap}
+          #dashboardPanel{position:relative;inset:auto;width:100%;max-height:132px;order:3}
+          #dashboardLevelsList{flex-direction:row;overflow-x:auto}
+          #dashboardLevelsList>div{min-width:160px}
+          #gamePlayArea{padding:12px 0 8px;gap:12px;min-height:0}
+          #wordCardsPoolContainer{min-height:180px;flex:1}
+          #dropSlotsContainer{min-height:130px;padding:12px}
+        }
+        @media(max-width:560px) {
+          header h1{font-size:15px} header>div:last-child>div{padding:7px 9px;font-size:11px}
+          #thaiQuestionCard{padding:13px 15px} #dropSlotsContainer{gap:8px}
+          [id^="slot-"]{width:68px!important;height:96px!important}
+          [data-card-id]{width:82px!important;height:108px!important}
+          [data-card-id] img{height:58px!important}
+        }
+
+
+        /* QUALITY MONTH BOOTH THEME — vivid, high-contrast, spacious */
+        :root { color-scheme: dark; }
+        body { background:#07142f; color:#fff; }
+        #canvasContainer {
+          background: radial-gradient(circle at 12% 12%,rgba(0,224,255,.35),transparent 26%),
+                      radial-gradient(circle at 88% 20%,rgba(255,68,148,.30),transparent 25%),
+                      radial-gradient(circle at 55% 95%,rgba(255,193,7,.22),transparent 30%),
+                      linear-gradient(135deg,#101d52 0%,#35206e 48%,#092c57 100%);
+        }
+        #webcam { opacity:.22!important; filter:saturate(.8); }
+        .glass-panel {
+          background:linear-gradient(135deg,rgba(15,35,86,.92),rgba(38,29,91,.90));
+          backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+          border:1px solid rgba(255,255,255,.22);
+          box-shadow:0 18px 44px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.1);
+        }
+        #uiLayer { padding:clamp(12px,1.7vw,26px); gap:16px; }
+        header {
+          position:relative; gap:18px; min-height:88px; padding:14px 20px!important;
+          border-radius:24px!important; border-top:4px solid #26e6ef;
+          background:linear-gradient(100deg,rgba(8,28,75,.96),rgba(44,31,105,.93),rgba(8,50,88,.94));
+        }
+        header:after { content:""; position:absolute; left:0; right:0; bottom:0; height:3px; background:linear-gradient(90deg,#26e6ef,#b9ff3b,#ffcf33,#ff4f9a,#a88bff); border-radius:0 0 24px 24px; }
+        header > div:first-child { min-width:220px; }
+        header > div:last-child { gap:12px; flex-wrap:wrap; justify-content:flex-end; }
+        header > div:last-child > div { border-radius:17px!important; padding:10px 16px!important; border:1px solid rgba(255,255,255,.22); box-shadow:0 7px 18px rgba(0,0,0,.18); }
+        header > div:last-child > div:nth-child(1) { background:linear-gradient(135deg,#1e91ff,#6257ff)!important; color:#fff; }
+        header > div:last-child > div:nth-child(2) { background:linear-gradient(135deg,#ff4f8b,#ff7658)!important; color:#fff; }
+        header > div:last-child > div:nth-child(3) { background:linear-gradient(135deg,#ffdf45,#ffb21f)!important; color:#392047; }
+        #gamePlayArea { padding:108px 286px 20px 0; gap:20px; overflow:visible; justify-content:space-between; }
+        #thaiQuestionCard {
+          max-width:680px; padding:18px 28px!important; border-radius:25px!important;
+          background:linear-gradient(110deg,rgba(7,42,97,.97),rgba(71,36,127,.96))!important;
+          border:1px solid rgba(81,238,255,.55)!important; box-shadow:0 0 0 4px rgba(38,230,239,.08),0 16px 36px rgba(0,0,0,.22);
+        }
+        #thaiQuestionCard p:first-child { color:#ffdf4a!important; letter-spacing:.14em; }
+        #thaiPromptText { font-size:clamp(26px,2.5vw,38px); margin:7px 0!important; color:#fff; }
+        #feedbackText { font-size:14px; min-height:22px; color:#63f4d5!important; }
+        #wordCardsPoolContainer {
+          width:100%; max-width:950px; min-height:235px; flex:1 1 235px; margin:0!important;
+          border-radius:28px; border:1px solid rgba(255,255,255,.2);
+          background:linear-gradient(135deg,rgba(8,24,64,.52),rgba(41,28,95,.42));
+          box-shadow:inset 0 0 0 5px rgba(255,255,255,.025); overflow:visible;
+        }
+        #wordCardsPoolContainer:before { content:"🧩 PICK THE WORD · เลือกคำให้ถูกต้อง"; position:absolute; top:12px; left:18px; font-size:11px; font-weight:700; letter-spacing:.08em; color:#8cf7ff; opacity:.95; pointer-events:none; }
+        #dropSlotsContainer {
+          max-width:950px; width:100%; min-height:158px; padding:18px 22px!important;
+          gap:clamp(14px,1.5vw,24px)!important; border-radius:28px!important;
+          border:2px solid rgba(255,255,255,.22)!important;
+          background:linear-gradient(105deg,rgba(7,34,79,.96),rgba(39,31,93,.96))!important;
+          box-shadow:0 12px 30px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.1);
+        }
+        #dropSlotsContainer:before { content:"✨ BUILD YOUR SENTENCE"; width:100%; text-align:center; color:#ffe45c; font-size:11px; font-weight:800; letter-spacing:.16em; margin-bottom:0; }
+        #dashboardPanel {
+          top:126px!important; right:clamp(12px,1.7vw,26px)!important; bottom:24px!important; width:246px!important;
+          padding:18px!important; border-radius:24px!important; border:1px solid rgba(255,255,255,.22);
+          background:linear-gradient(180deg,rgba(8,34,80,.97),rgba(43,27,91,.97))!important;
+        }
+        #dashboardPanel h3 { color:#fff; }
+        #dashboardLevelsList { display:flex; flex-direction:column; gap:11px!important; padding:4px 2px 8px; }
+        #dashboardLevelsList > div { padding:12px!important; min-height:56px; border-radius:16px!important; white-space:normal; gap:8px; line-height:1.35; border:1px solid rgba(255,255,255,.14); box-shadow:0 6px 14px rgba(0,0,0,.12); }
+        #dashboardLevelsList > div:nth-child(5n+1) { border-left:4px solid #26e6ef; }
+        #dashboardLevelsList > div:nth-child(5n+2) { border-left:4px solid #ffcf33; }
+        #dashboardLevelsList > div:nth-child(5n+3) { border-left:4px solid #ff5eaa; }
+        #dashboardLevelsList > div:nth-child(5n+4) { border-left:4px solid #a88bff; }
+        #dashboardLevelsList > div:nth-child(5n+5) { border-left:4px solid #68f3b5; }
+        [data-card-id] {
+          width:clamp(100px,8.2vw,128px)!important; height:clamp(126px,11vw,158px)!important;
+          border-radius:22px!important; padding:10px!important; background:linear-gradient(160deg,#fff,#f2f8ff)!important;
+          border:3px solid #fff!important; box-shadow:0 12px 25px rgba(0,0,0,.3),0 0 0 4px rgba(38,230,239,.18)!important;
+          transition:transform .22s ease,box-shadow .22s ease!important;
+        }
+        [data-card-id]:nth-child(5n+1) { border-color:#30dff2!important; }
+        [data-card-id]:nth-child(5n+2) { border-color:#ffd84b!important; }
+        [data-card-id]:nth-child(5n+3) { border-color:#ff6fb0!important; }
+        [data-card-id]:nth-child(5n+4) { border-color:#a98bff!important; }
+        [data-card-id]:nth-child(5n+5) { border-color:#5be8b2!important; }
+        [data-card-id]:hover { transform:translateY(-5px) rotate(0deg) scale(1.04)!important; box-shadow:0 18px 30px rgba(0,0,0,.36)!important; }
+        [data-card-id] img { width:100%!important; height:78px!important; border-radius:14px!important; }
+        [data-card-id] span { font-size:clamp(12px,1vw,15px)!important; }
+        [id^="slot-"] { width:clamp(88px,7.5vw,114px)!important; height:122px!important; border-radius:20px!important; }
+        #modalOverlay { background:rgba(3,10,32,.78)!important; backdrop-filter:blur(14px); }
+        #startScreen,#messageModal {
+          background:radial-gradient(circle at 85% 10%,rgba(255,77,160,.22),transparent 27%),linear-gradient(145deg,rgba(7,47,105,.99),rgba(55,30,110,.99))!important;
+          border-radius:30px!important; border:2px solid rgba(92,235,255,.45)!important;
+          box-shadow:0 25px 70px rgba(0,0,0,.42),0 0 0 7px rgba(255,255,255,.04);
+        }
+        .quality-ribbon { display:inline-block; padding:7px 14px; margin-bottom:16px; border-radius:999px; color:#15254c; font-size:11px; font-weight:900; letter-spacing:.12em; background:linear-gradient(90deg,#5df2ee,#d8ff56,#ffdb55); box-shadow:0 5px 18px rgba(38,230,239,.18); }
+        #startBtn { border-radius:18px!important; background:linear-gradient(90deg,#00d6c9,#27a7ff,#7965ff)!important; box-shadow:0 10px 28px rgba(0,210,220,.25); }
+        #startBtn:hover,#modalNextBtn:hover { filter:brightness(1.08); transform:translateY(-2px); }
+        #modalNextBtn { border-radius:18px!important; background:linear-gradient(90deg,#ffb52e,#ff4f9b)!important; }
+        #resetGameBtn { color:#a8f8ff!important; text-decoration:none!important; padding:8px 12px; border:1px solid rgba(168,248,255,.28); border-radius:12px; }
+        .active-slot { animation:pulse-ring 1.2s infinite ease-in-out; }
+        @media(max-width:900px) {
+          #uiLayer{padding:10px;gap:10px} header{align-items:flex-start;flex-wrap:wrap}
+          header > div:last-child{justify-content:flex-start}
+          #dashboardPanel{position:relative!important;inset:auto!important;width:100%!important;max-height:132px;order:3}
+          #dashboardLevelsList{flex-direction:row;overflow-x:auto}
+          #dashboardLevelsList>div{min-width:160px}
+          #gamePlayArea{padding:10px 0 8px;gap:12px;min-height:0}
+          #wordCardsPoolContainer{min-height:180px;flex:1}
+          #dropSlotsContainer{min-height:130px;padding:12px}
+        }
+        @media(max-width:560px) {
+          header h1{font-size:13px} header>div:last-child>div{padding:7px 9px!important;font-size:11px}
+          #thaiQuestionCard{padding:13px 15px!important} #dropSlotsContainer{gap:8px!important}
+          [id^="slot-"]{width:68px!important;height:96px!important}
+          [data-card-id]{width:82px!important;height:108px!important}
+          [data-card-id] img{height:58px!important}
+          #wordCardsPoolContainer:before{font-size:9px}
+        }
+
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 min-h-screen text-slate-800 overflow-hidden relative">
+
+    <div id="canvasContainer" class="absolute inset-0 w-full h-full overflow-hidden flex items-center justify-center bg-black">
+        <video id="webcam" class="absolute inset-0 w-full h-full object-cover opacity-50 -scale-x-100" autoplay playsinline muted></video>
+        <canvas id="gameCanvas" class="absolute inset-0 w-full h-full object-cover z-30 pointer-events-none"></canvas>
+    </div>
+
+    <!-- UI Overlay Layer -->
+    <div id="uiLayer" class="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-4 md:p-6">
+        
+        <!-- Top Bar -->
+        <header class="w-full flex justify-between items-center glass-panel rounded-2xl p-3 md:p-4 pointer-events-auto shadow-lg">
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl md:text-3xl">✨</span>
+                <div>
+                    <h1 class="text-base md:text-xl font-bold text-white drop-shadow">🏆 QUALITY MONTH · AR Sentence</h1>
+                    <p id="handStatus" class="text-xs text-cyan-200 font-medium">✨ QUALITY CHALLENGE · กำลังหามือของคุณ...</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <div class="bg-white/30 backdrop-blur-md px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-white font-semibold text-xs md:text-base border border-white/40">
+                    ด่าน: <span id="currentLevelDisplay">1</span> / 5
+                </div>
+                <div class="bg-rose-500/90 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-xl font-bold text-xs md:text-base shadow-md flex items-center gap-1.5">
+                    ⏱️ เวลา: <span id="timerDisplay">0.0</span>s
+                </div>
+                <div class="bg-amber-400/90 text-slate-900 px-3 py-1.5 md:px-4 md:py-2 rounded-xl font-bold text-xs md:text-base shadow-md">
+                    ⭐ คะแนน: <span id="scoreDisplay">0</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Right Side Dashboard Panel -->
+        <div id="dashboardPanel" class="absolute right-4 top-24 bottom-28 w-60 md:w-68 glass-panel rounded-2xl p-4 flex flex-col pointer-events-auto shadow-2xl z-30 overflow-hidden">
+            <div class="flex items-center justify-between border-b border-white/30 pb-2 mb-3">
+                <h3 class="font-bold text-white text-sm md:text-base flex items-center gap-1.5">
+                    <span>🏆</span> สรุป 5 ด่าน
+                </h3>
+            </div>
+            <div id="dashboardLevelsList" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
+            <div class="mt-3 pt-2 border-t border-white/30 text-center">
+                <button id="resetGameBtn" class="text-xs text-white/80 hover:text-white underline pointer-events-auto">เริ่มเล่นใหม่ทั้งหมด</button>
+            </div>
+        </div>
+
+        <!-- Center Notification / Game Modal -->
+        <div id="modalOverlay" class="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-40 pointer-events-auto transition-all duration-300">
+            <!-- Start Screen Card -->
+            <div id="startScreen" class="glass-panel p-8 rounded-3xl max-w-md w-full text-center shadow-2xl mx-4 transform transition-all">
+                <div class="text-6xl mb-4 animate-bounce">🪄🔤</div>
+                <div class="quality-ribbon">★ QUALITY MONTH CHALLENGE ★</div>
+                <h2 class="text-2xl md:text-3xl font-extrabold text-white mb-2">AR Sentence Game</h2>
+                <p class="text-slate-100 text-sm md:text-base mb-6">เล่นให้ไว คิดให้แม่น! ✨ สุ่มโจทย์ 5 ด่านในแต่ละรอบ สะสมคะแนนพิชิตภารกิจ Quality</p>
+                
+                <div class="bg-white/20 p-4 rounded-xl text-left text-xs md:text-sm text-white mb-6 space-y-2 border border-white/30">
+                    <p class="font-semibold text-yellow-300">🎯 MISSION BRIEF · วิธีเล่น</p>
+                    <p>1. 👆 แตะการ์ดคำศัพท์เพื่อเลือกคำ</p>
+                    <p>2. 🎯 แตะช่องคำตอบที่ไฮไลต์เพื่อวางคำ</p>
+                </div>
+
+                <button id="startBtn" class="pointer-events-auto w-full py-3.5 px-6 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold rounded-2xl shadow-lg transform active:scale-95 transition-all text-lg flex items-center justify-center space-x-2">
+                    <span>เริ่ม Quality Challenge!</span>
+                    <span>🚀</span>
+                </button>
+            </div>
+
+            <!-- Level Complete Modal -->
+            <div id="messageModal" class="glass-panel p-8 rounded-3xl max-w-md w-full text-center shadow-2xl mx-4 hidden">
+                <div id="modalEmoji" class="text-6xl mb-4">🎉</div>
+                <h2 id="modalTitle" class="text-2xl md:text-3xl font-extrabold text-white mb-2">ผ่านด่านสำเร็จ!</h2>
+                
+                <div id="modalScoreDetails" class="bg-white/20 p-4 rounded-2xl text-white mb-6 border border-white/30 text-sm space-y-1">
+                    <p>⏱️ เวลาที่ใช้: <span id="timeTakenText" class="font-bold text-yellow-300">0.0</span> วินาที</p>
+                    <p>⚡ โบนัสความเร็ว: <span id="speedBonusText" class="font-bold text-emerald-300">+0</span> คะแนน</p>
+                    <p class="text-lg font-bold border-t border-white/30 pt-2 mt-2">รวมคะแนนด่านนี้: <span id="levelTotalScoreText" class="text-amber-300">0</span> คะแนน</p>
+                </div>
+                
+                <button id="modalNextBtn" class="pointer-events-auto w-full py-3.5 px-6 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold rounded-2xl shadow-lg transform active:scale-95 transition-all text-lg">
+                    ไปด่านถัดไป ➡️
+                </button>
+            </div>
+        </div>
+
+        <div id="gamePlayArea" class="w-full h-full flex flex-col justify-between items-center pt-16 pb-6 pointer-events-auto pr-64 border-0 relative overflow-hidden">
+            
+            <!-- Question Box -->
+            <div id="thaiQuestionCard" class="glass-panel rounded-2xl px-6 py-2.5 text-center max-w-md w-full shadow-lg border border-white/40 z-20">
+                <p class="text-[10px] md:text-xs text-amber-300 font-semibold uppercase tracking-wider mb-0.5">โจทย์ภาษาไทย</p>
+                <h3 id="thaiPromptText" class="text-xl md:text-2xl font-bold text-white drop-shadow">ฉัน รัก สุนัข</h3>
+                <p id="feedbackText" class="text-xs font-medium mt-1 text-emerald-300 h-5 transition-all">👉 เอานิ้วจิ้มการ์ดคำศัพท์เพื่อหยิบ</p>
+            </div>
+
+            <!-- Scattered Word Cards Pool Area -->
+            <div id="wordCardsPoolContainer" class="relative w-full flex-1 max-w-3xl my-2 pointer-events-auto"></div>
+
+            <!-- Drop Slots Container -->
+            <div class="w-full max-w-3xl bg-white/15 backdrop-blur-md rounded-3xl p-3 border border-white/30 shadow-inner flex flex-wrap justify-center items-center gap-4 min-h-[140px] z-20" id="dropSlotsContainer"></div>
+        </div>
+
+    </div>
+
+    <script>
+        const coreLevels = [
+            { 
+                id: 1, 
+                thai: "ฉัน รัก สุนัข", 
+                words: ["I", "love", "dogs"], 
+                images: [
+                    "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1518717758536-85ae29035b6d?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=300&auto=format&fit=crop&q=60"
+                ] 
+            },
+            { 
+                id: 2, 
+                thai: "แมว ตัวนั้น น่ารัก", 
+                words: ["The", "cat", "is", "cute"], 
+                images: [
+                    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1535268647677-300dbf3d78d1?w=300&auto=format&fit=crop&q=60"
+                ] 
+            },
+            { 
+                id: 3, 
+                thai: "นก บิน อยู่ใน ท้องฟ้า", 
+                words: ["Birds", "fly", "in", "sky"], 
+                images: [
+                    "https://images.unsplash.com/photo-1444464666168-49d633b86797?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1569154941061-e231b4725ef1?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=300&auto=format&fit=crop&q=60"
+                ] 
+            },
+            { 
+                id: 4, 
+                thai: "พวกเรา ชอบ ดื่ม นม", 
+                words: ["We", "like", "to", "drink", "milk"], 
+                images: [
+                    "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1550583724-b2692b85b150?w=300&auto=format&fit=crop&q=60"
+                ] 
+            },
+            { 
+                id: 5, 
+                thai: "แอปเปิ้ล มีสี แดง", 
+                words: ["Apples", "are", "red", "and", "sweet"], 
+                images: [
+                    "https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1576179363032-45e69e061732?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1518843875459-f738682238a6?w=300&auto=format&fit=crop&q=60", 
+                    "https://images.unsplash.com/photo-1587314168485-3236d6710814?w=300&auto=format&fit=crop&q=60"
+                ] 
+            }
+        ];
+
+        // Extra sentence missions: 30+ available levels, each round selects 5 unique missions.
+        const extraLevelBank = [
+            { thai: "ฉัน ตรวจสอบ คุณภาพ", words: ["I", "check", "quality"] },
+            { thai: "คุณภาพ สำคัญ มาก", words: ["Quality", "is", "important"] },
+            { thai: "เรา ทำงาน เป็นทีม", words: ["We", "work", "as", "a", "team"] },
+            { thai: "โปรด สวม แว่นตา นิรภัย", words: ["Please", "wear", "safety", "glasses"] },
+            { thai: "ล้าง มือ ก่อน ทำงาน", words: ["Wash", "your", "hands", "before", "work"] },
+            { thai: "ฉัน รักษา พื้นที่ ให้สะอาด", words: ["I", "keep", "the", "area", "clean"] },
+            { thai: "ตรวจสอบ เครื่องมือ ก่อนใช้", words: ["Check", "the", "tools", "before", "use"] },
+            { thai: "ความปลอดภัย มาก่อน เสมอ", words: ["Safety", "comes", "first", "always"] },
+            { thai: "เราลด ของเสีย ด้วยกัน", words: ["We", "reduce", "waste", "together"] },
+            { thai: "โปรด ตรวจสอบ ฉลาก", words: ["Please", "check", "the", "label"] },
+            { thai: "พนักงาน ทำตาม มาตรฐาน", words: ["Workers", "follow", "the", "standard"] },
+            { thai: "ฉัน พบ ปัญหา", words: ["I", "found", "a", "problem"] },
+            { thai: "เราต้อง แก้ไข ปัญหา", words: ["We", "must", "solve", "the", "problem"] },
+            { thai: "คุณภาพ เริ่มต้น ที่ตัวเรา", words: ["Quality", "starts", "with", "us"] },
+            { thai: "กรุณา ใช้ อุปกรณ์ ป้องกัน", words: ["Please", "use", "protective", "equipment"] },
+            { thai: "ทีมของเรา ทำได้ ดี", words: ["Our", "team", "does", "great"] },
+            { thai: "ฉัน รายงาน ความเสี่ยง", words: ["I", "report", "the", "risk"] },
+            { thai: "ป้องกัน ดีกว่า แก้ไข", words: ["Prevention", "is", "better", "than", "correction"] },
+            { thai: "เราตรวจสอบ ทุกชิ้น อย่างระมัดระวัง", words: ["We", "inspect", "every", "part", "carefully"] },
+            { thai: "โปรด วาง เครื่องมือ ให้ถูกที่", words: ["Please", "put", "tools", "in", "place"] },
+            { thai: "ฉัน ปฏิบัติตาม กฎความปลอดภัย", words: ["I", "follow", "safety", "rules"] },
+            { thai: "เราปรับปรุง งาน ทุกวัน", words: ["We", "improve", "our", "work", "daily"] },
+            { thai: "หยุด และ ตรวจสอบ ก่อนเริ่ม", words: ["Stop", "and", "check", "before", "starting"] },
+            { thai: "โปรด แยก ขยะ ให้ถูกต้อง", words: ["Please", "sort", "the", "waste", "correctly"] },
+            { thai: "ฉัน ใส่ใจ รายละเอียด", words: ["I", "pay", "attention", "to", "detail"] },
+            { thai: "ทำให้ ถูกต้อง ตั้งแต่ ครั้งแรก", words: ["Do", "it", "right", "the", "first", "time"] },
+            { thai: "เราช่วยกัน สร้าง คุณภาพ", words: ["We", "build", "quality", "together"] },
+            { thai: "ตรวจพบ เรารีบ แจ้ง", words: ["See", "it", "and", "report", "it"] },
+            { thai: "ความสะอาด ช่วย ป้องกัน ปัญหา", words: ["Cleanliness", "helps", "prevent", "problems"] },
+            { thai: "ทุกคน มีส่วนร่วม ในคุณภาพ", words: ["Everyone", "takes", "part", "in", "quality"] }
+        ];
+        const genericImages = [
+            "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=300&auto=format&fit=crop&q=60",
+            "https://images.unsplash.com/photo-1581092160562-40aa08e78837?w=300&auto=format&fit=crop&q=60",
+            "https://images.unsplash.com/photo-1581092795360-fd1ca04f0952?w=300&auto=format&fit=crop&q=60",
+            "https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?w=300&auto=format&fit=crop&q=60",
+            "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=300&auto=format&fit=crop&q=60"
+        ];
+        const extraLevels = extraLevelBank.map((level, index) => ({
+            id: index + 6,
+            thai: level.thai,
+            words: level.words,
+            images: level.words.map((_, wordIndex) => genericImages[(index + wordIndex) % genericImages.length])
+        }));
+        const levels = [...coreLevels, ...extraLevels];
+
+        let currentLevelIndex = 0;
+        let roundLevels = [];
+        function shuffleLevels() {
+            // Randomly pick 5 different missions from the full bank, then randomize their order.
+            const pool = [...levels];
+            roundLevels = [];
+            while (roundLevels.length < 5 && pool.length) {
+                const pickIndex = Math.floor(Math.random() * pool.length);
+                roundLevels.push(pool.splice(pickIndex, 1)[0]);
+            }
+            for (let i = roundLevels.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [roundLevels[i], roundLevels[j]] = [roundLevels[j], roundLevels[i]];
+            }
+        }
+        let score = 0;
+        let levelScores = [];
+        let gameState = 'START';
+
+        let currentLevelWords = [];
+        let placedWords = []; 
+        let currentTargetIndex = 0; 
+
+        let levelStartTime = 0;
+        let levelTimerInterval = null;
+        let timeTaken = 0;
+
+        // Selected Card State
+        let selectedCard = null;
+
+        // Instant Touch Trigger Cooldown to prevent accidental double taps
+        let lastPokeTime = 0;
+        const POKE_COOLDOWN = 300; // 300ms cooldown between pokes
+
+        // Hand Tracking State
+        let handsInstance = null;
+        let cameraInstance = null;
+        let isHandDetected = false;
+        let indexFinger = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        let lastHandTime = 0;
+
+        // Mouse Cursor
+        let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+
+        // DOM Elements
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const webcamElement = document.getElementById('webcam');
+        const handStatusEl = document.getElementById('handStatus');
+        const currentLevelDisplay = document.getElementById('currentLevelDisplay');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const timerDisplay = document.getElementById('timerDisplay');
+        const thaiPromptText = document.getElementById('thaiPromptText');
+        const feedbackText = document.getElementById('feedbackText');
+        const wordCardsPoolContainer = document.getElementById('wordCardsPoolContainer');
+        const dropSlotsContainer = document.getElementById('dropSlotsContainer');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const startScreen = document.getElementById('startScreen');
+        const messageModal = document.getElementById('messageModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalEmoji = document.getElementById('modalEmoji');
+        const timeTakenText = document.getElementById('timeTakenText');
+        const speedBonusText = document.getElementById('speedBonusText');
+        const levelTotalScoreText = document.getElementById('levelTotalScoreText');
+        const startBtn = document.getElementById('startBtn');
+        const modalNextBtn = document.getElementById('modalNextBtn');
+        const dashboardLevelsList = document.getElementById('dashboardLevelsList');
+        const resetGameBtn = document.getElementById('resetGameBtn');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+
+        window.addEventListener('click', (e) => {
+            if (gameState === 'PLAYING') {
+                checkPokeAt(e.clientX, e.clientY, true);
+            }
+        });
+
+        function updateFeedback(msg, isError = false) {
+            feedbackText.textContent = msg;
+            if (isError) {
+                feedbackText.className = 'text-xs font-bold mt-1 text-rose-300 animate-bounce';
+            } else {
+                feedbackText.className = 'text-xs font-medium mt-1 text-emerald-300';
+            }
+        }
+
+        function checkPokeAt(cursorX, cursorY, forceClick = false) {
+            const now = Date.now();
+            if (!forceClick && (now - lastPokeTime < POKE_COOLDOWN)) return;
+
+            const elements = document.elementsFromPoint(cursorX, cursorY);
+            
+            // 1. If holding a card, check if poking a drop slot to place it
+            if (selectedCard) {
+                const dropSlot = elements.find(el => el.closest('#dropSlotsContainer'));
+                if (dropSlot) {
+                    const slotIdAttr = dropSlot.closest('[id^="slot-"]')?.id;
+                    if (slotIdAttr) {
+                        const slotIdx = parseInt(slotIdAttr.replace('slot-', ''));
+                        if (slotIdx === currentTargetIndex) {
+                            lastPokeTime = now;
+                            attemptPlaceCard();
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // 2. Check if poking an available card to pick it up
+            for (let el of elements) {
+                const cardContainer = el.closest('[data-card-id]');
+                if (cardContainer) {
+                    const cardId = cardContainer.getAttribute('data-card-id');
+                    const cardObj = currentLevelWords.find(c => c.id === cardId);
+                    if (cardObj && !cardObj.used) {
+                        if (selectedCard === cardObj) return; // already selected
+                        lastPokeTime = now;
+                        selectedCard = cardObj;
+                        updateFeedback(`✨ เลือก "${cardObj.word}" แล้ว! จิ้มที่ช่อง ${currentTargetIndex + 1} เพื่อวาง`);
+                        renderGameArea();
+                        return;
+                    }
+                }
+            }
+        }
+
+        function attemptPlaceCard() {
+            if (!selectedCard) return;
+
+            const levelData = roundLevels[currentLevelIndex];
+            const expectedWord = levelData.words[currentTargetIndex];
+
+            if (selectedCard.word === expectedWord) {
+                selectedCard.used = true;
+                placedWords[currentTargetIndex] = selectedCard;
+                currentTargetIndex++;
+                selectedCard = null;
+
+                updateFeedback(`🎉 ถูกต้อง! เก่งมาก จิ้มคำถัดไปเลย`);
+                renderGameArea();
+
+                if (currentTargetIndex >= levelData.words.length) {
+                    finishLevel();
+                }
+            } else {
+                updateFeedback(`❌ ยังไม่ใช่คำนี้ ลองจิ้มคำอื่นดูนะ!`, true);
+                selectedCard = null;
+                renderGameArea();
+            }
+        }
+
+        function finishLevel() {
+            stopTimer();
+            gameState = 'LEVEL_CLEAR';
+
+            const baseScore = 100;
+            const speedBonus = Math.max(0, Math.round((30 - timeTaken) * 10));
+            const levelScore = baseScore + speedBonus;
+
+            score += levelScore;
+            levelScores[currentLevelIndex] = levelScore;
+            scoreDisplay.textContent = score;
+
+            modalOverlay.classList.remove('hidden');
+            startScreen.classList.add('hidden');
+            messageModal.classList.remove('hidden');
+
+            modalTitle.textContent = `เก่งมาก! ผ่านด่านที่ ${currentLevelIndex + 1}`;
+            modalEmoji.textContent = '🎉';
+            timeTakenText.textContent = timeTaken.toFixed(1);
+            speedBonusText.textContent = `+${speedBonus}`;
+            levelTotalScoreText.textContent = levelScore;
+
+            if (currentLevelIndex + 1 >= roundLevels.length) {
+                modalNextBtn.textContent = '🏆 ดูสรุปคะแนนทั้งหมด';
+            } else {
+                modalNextBtn.textContent = 'ไปด่านถัดไป ➡️';
+            }
+
+            renderDashboard();
+        }
+
+        function triggerAllClear() {
+            gameState = 'ALL_CLEAR';
+            modalOverlay.classList.remove('hidden');
+            startScreen.classList.add('hidden');
+            messageModal.classList.remove('hidden');
+
+            const totalPossible = roundLevels.length * 400;
+            const percent = Math.round((score / totalPossible) * 100);
+            const rank = percent >= 90 ? 'QUALITY MASTER' : percent >= 75 ? 'QUALITY STAR' : percent >= 50 ? 'QUALITY HERO' : 'QUALITY ROOKIE';
+            const breakdown = roundLevels.map((level, idx) => `
+                <div class="flex items-center justify-between gap-3 rounded-xl bg-white/10 px-3 py-2 text-left">
+                    <span class="text-white/90">ด่าน ${idx + 1}: ${level.thai}</span>
+                    <strong class="whitespace-nowrap text-amber-300">${levelScores[idx] ?? 0} คะแนน</strong>
+                </div>
+            `).join('');
+
+            modalTitle.textContent = '🏆 สรุปผล QUALITY CHALLENGE';
+            modalEmoji.textContent = '👑';
+            document.getElementById('modalScoreDetails').innerHTML = `
+                <div class="rounded-2xl border border-yellow-300/50 bg-gradient-to-r from-cyan-500/20 via-violet-500/25 to-pink-500/20 p-4 mb-4">
+                    <p class="text-sm font-bold tracking-widest text-cyan-200">TOTAL SCORE</p>
+                    <p class="text-5xl font-black text-yellow-300 my-2">${score}</p>
+                    <p class="text-white font-bold">คะแนนรวมจาก ${roundLevels.length} ด่าน</p>
+                    <div class="mt-3 inline-block rounded-full bg-yellow-300 px-4 py-1.5 text-sm font-extrabold text-slate-900">${rank} · ${percent}%</div>
+                </div>
+                <p class="text-left font-bold text-white mb-2">📊 คะแนนแยกตามด่าน</p>
+                <div class="space-y-2 max-h-44 overflow-y-auto pr-1">${breakdown}</div>
+                <p class="text-sm text-cyan-100 mt-4">เก่งมาก! ขอบคุณที่ร่วมกิจกรรม Quality Month 🎉</p>
+            `;
+            modalNextBtn.textContent = '🔄 เล่นใหม่อีกครั้ง';
+        }
+
+        const originalScoreDetailsHTML = document.getElementById('modalScoreDetails').innerHTML;
+
+        function resetGame() {
+            score = 0;
+            levelScores = [];
+            scoreDisplay.textContent = '0';
+            document.getElementById('modalScoreDetails').innerHTML = originalScoreDetailsHTML;
+            modalTitle.textContent = 'ผ่านด่านสำเร็จ!';
+            modalEmoji.textContent = '🎉';
+            currentLevelIndex = 0;
+            shuffleLevels();
+            selectedCard = null;
+            hoverTargetId = null;
+            gameState = 'START';
+            stopTimer();
+            modalOverlay.classList.remove('hidden');
+            startScreen.classList.remove('hidden');
+            messageModal.classList.add('hidden');
+            renderDashboard();
+        }
+
+        startBtn.addEventListener('click', () => {
+            modalOverlay.classList.add('hidden');
+            gameState = 'PLAYING';
+            loadLevel(0);
+        });
+
+        modalNextBtn.addEventListener('click', () => {
+            if (gameState === 'ALL_CLEAR') {
+                resetGame();
+            } else if (currentLevelIndex + 1 >= roundLevels.length) {
+                triggerAllClear();
+            } else {
+                modalOverlay.classList.add('hidden');
+                gameState = 'PLAYING';
+                loadLevel(currentLevelIndex + 1);
+            }
+        });
+
+        resetGameBtn.addEventListener('click', resetGame);
+
+        function startTimer() {
+            clearInterval(levelTimerInterval);
+            levelStartTime = Date.now();
+            timerDisplay.textContent = '0.0';
+            levelTimerInterval = setInterval(() => {
+                if (gameState === 'PLAYING') {
+                    timeTaken = (Date.now() - levelStartTime) / 1000;
+                    timerDisplay.textContent = timeTaken.toFixed(1);
+                }
+            }, 100);
+        }
+
+        function stopTimer() {
+            clearInterval(levelTimerInterval);
+        }
+
+        function renderDashboard() {
+            dashboardLevelsList.innerHTML = '';
+            roundLevels.forEach((lvl, idx) => {
+                const isCompleted = idx < currentLevelIndex || gameState === 'ALL_CLEAR';
+                const isCurrent = idx === currentLevelIndex && gameState === 'PLAYING';
+                
+                const item = document.createElement('div');
+                item.className = `p-2 rounded-xl flex items-center justify-between text-xs font-semibold ${
+                    isCurrent ? 'bg-amber-400 text-slate-900 border border-white shadow-md' : 
+                    isCompleted ? 'bg-emerald-500/30 text-white border border-emerald-400/40' : 'bg-white/20 text-white/70'
+                }`;
+                item.innerHTML = `
+                    <div class="flex items-center space-x-1.5 truncate">
+                        <span>ด่าน ${lvl.id}:</span>
+                        <span class="truncate">${lvl.thai}</span>
+                    </div>
+                    <span>${isCompleted ? '✅' : isCurrent ? '⏳' : '🔒'}</span>
+                `;
+                dashboardLevelsList.appendChild(item);
+            });
+        }
+
+        function loadLevel(index) {
+            if (index >= roundLevels.length) {
+                triggerAllClear();
+                return;
+            }
+            currentLevelIndex = index;
+            currentTargetIndex = 0;
+            selectedCard = null;
+            currentLevelDisplay.textContent = currentLevelIndex + 1;
+            const levelData = roundLevels[currentLevelIndex];
+            thaiPromptText.textContent = levelData.thai;
+            updateFeedback(`👉 เอานิ้วจิ้มรูปเพื่อหยิบการ์ดคำศัพท์`);
+            renderDashboard();
+
+            const positions = [
+                { top: '8%', left: '4%', rotate: -5 },
+                { top: '48%', left: '23%', rotate: 4 },
+                { top: '7%', left: '43%', rotate: -2 },
+                { top: '46%', left: '63%', rotate: 5 },
+                { top: '8%', left: '81%', rotate: -4 }
+            ];
+
+            const shuffledPositions = [...positions].sort(() => Math.random() - 0.5);
+
+            currentLevelWords = levelData.words.map((w, i) => ({
+                id: `card-${i}`,
+                word: w,
+                image: levelData.images[i],
+                used: false,
+                pos: shuffledPositions[i % shuffledPositions.length]
+            }));
+            currentLevelWords.sort(() => Math.random() - 0.5);
+
+            placedWords = new Array(levelData.words.length).fill(null);
+
+            renderGameArea();
+            startTimer();
+        }
+
+        function renderGameArea() {
+            wordCardsPoolContainer.innerHTML = '';
+
+            currentLevelWords.forEach(card => {
+                if (!card.used) {
+                    const isSelected = (selectedCard === card);
+                    const cardEl = document.createElement('div');
+                    cardEl.setAttribute('data-card-id', card.id);
+                    cardEl.className = `absolute flex flex-col items-center justify-center bg-white rounded-2xl shadow-xl border-2 p-2 w-20 h-24 md:w-24 md:h-28 cursor-pointer select-none z-10 transition-transform ${
+                        isSelected ? 'border-amber-400 ring-4 ring-amber-300 scale-110 shadow-2xl z-30' : 'border-white/90 hover:scale-105'
+                    }`;
+                    
+                    cardEl.style.top = card.pos.top;
+                    cardEl.style.left = card.pos.left;
+                    cardEl.style.transform = isSelected ? 'scale(1.1)' : `rotate(${card.pos.rotate}deg)`;
+
+                    cardEl.innerHTML = `
+                        <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl overflow-hidden shadow-sm bg-slate-100 mb-1 pointer-events-none">
+                            <img src="${card.image}" alt="${card.word}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/100x100/e2e8f0/1e293b?text=${card.word}'">
+                        </div>
+                        <span class="text-slate-900 font-bold text-xs md:text-sm pointer-events-none">${card.word}</span>
+                    `;
+                    wordCardsPoolContainer.appendChild(cardEl);
+                }
+            });
+
+            dropSlotsContainer.innerHTML = '';
+            placedWords.forEach((card, idx) => {
+                const slotEl = document.createElement('div');
+                slotEl.id = `slot-${idx}`;
+                const isCurrentActiveSlot = idx === currentTargetIndex;
+
+                if (card === null) {
+                    slotEl.className = `w-24 h-28 md:w-28 md:h-32 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center font-semibold text-xs md:text-sm transition-all shadow-inner ${
+                        isCurrentActiveSlot 
+                        ? 'border-amber-400 bg-amber-400/20 text-amber-200 active-slot scale-105' 
+                        : 'border-white/30 bg-white/10 text-white/50'
+                    }`;
+                    slotEl.innerHTML = `
+                        <span class="text-white/80 font-bold mb-1">ช่อง ${idx + 1}</span>
+                        ${isCurrentActiveSlot ? '<span class="text-[10px] text-amber-300 font-bold bg-amber-500/30 px-2 py-0.5 rounded-full">จิ้มวางที่นี่</span>' : ''}
+                    `;
+                } else {
+                    slotEl.className = 'w-24 h-28 md:w-28 md:h-32 rounded-2xl bg-white shadow-xl border-2 border-emerald-500 flex flex-col items-center justify-center p-2 relative animate-fade-in';
+                    slotEl.innerHTML = `
+                        <div class="absolute -top-2 -right-2 bg-emerald-500 text-white w-6 h-6 rounded-full flex items-center justify-center shadow-md font-bold text-xs border-2 border-white">✓</div>
+                        <div class="w-14 h-14 md:w-16 md:h-16 rounded-xl overflow-hidden shadow-md bg-slate-100 mb-1">
+                            <img src="${card.image}" alt="${card.word}" class="w-full h-full object-cover">
+                        </div>
+                        <span class="text-slate-900 font-bold text-xs md:text-sm">${card.word}</span>
+                    `;
+                }
+                dropSlotsContainer.appendChild(slotEl);
+            });
+        }
+
+        function onHandResults(results) {
+            lastHandTime = Date.now();
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                isHandDetected = true;
+                handStatusEl.textContent = "👆 เอานิ้วจิ้มการ์ดเพื่อหยิบ/วาง";
+                handStatusEl.className = "text-xs text-emerald-400 font-medium";
+
+                const landmarks = results.multiHandLandmarks[0];
+                const indexTip = landmarks[8];
+
+                indexTip.x = 1 - indexTip.x;
+                indexFinger.x = indexTip.x * canvas.width;
+                indexFinger.y = indexTip.y * canvas.height;
+            } else {
+                isHandDetected = false;
+                if (Date.now() - lastHandTime > 2000) {
+                    handStatusEl.textContent = "⏳ กำลังหามือของคุณ...";
+                    handStatusEl.className = "text-xs text-yellow-300 font-medium";
+                }
+            }
+        }
+
+        function drawLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            let activeX = isHandDetected ? indexFinger.x : mouse.x;
+            let activeY = isHandDetected ? indexFinger.y : mouse.y;
+
+            if (gameState === 'PLAYING') {
+                checkPokeAt(activeX, activeY, false);
+            }
+
+            // Draw Finger Cursor Pointer (Poke Target Pin)
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(activeX, activeY, 18, 0, Math.PI * 2);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(activeX, activeY, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.restore();
+
+            // Draw floating mini preview card if selected
+            if (selectedCard && gameState === 'PLAYING') {
+                ctx.save();
+                ctx.translate(activeX + 25, activeY + 25);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+                ctx.shadowBlur = 10;
+                
+                ctx.beginPath();
+                ctx.roundRect(0, 0, 60, 30, 8);
+                ctx.fill();
+                ctx.strokeStyle = '#fbbf24';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.fillStyle = '#0f172a';
+                ctx.font = 'bold 12px Prompt, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(selectedCard.word, 30, 15);
+                ctx.restore();
+            }
+
+            requestAnimationFrame(drawLoop);
+        }
+
+        window.onload = () => {
+            shuffleLevels();
+            renderDashboard();
+            initMediaPipe();
+            requestAnimationFrame(drawLoop);
+        };
+
+        function initMediaPipe() {
+            if (typeof Hands === 'undefined' || typeof Camera === 'undefined') {
+                console.warn('MediaPipe script not loaded yet. Retrying in 500ms...');
+                setTimeout(initMediaPipe, 500);
+                return;
+            }
+
+            handsInstance = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            handsInstance.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            handsInstance.onResults(onHandResults);
+
+            cameraInstance = new Camera(webcamElement, {
+                onFrame: async () => {
+                    await handsInstance.send({ image: webcamElement });
+                },
+                width: 1280,
+                height: 720
+            });
+
+            cameraInstance.start().catch((err) => {
+                console.error('Camera access error:', err);
+                handStatusEl.textContent = '❌ ไม่สามารถเปิดกล้องได้ (ใช้เมาส์คลิกแทนได้)';
+                handStatusEl.className = 'text-xs text-rose-300 font-medium';
+            });
+        }
+    </script>
+</body>
+</html>
