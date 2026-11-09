@@ -261,7 +261,7 @@
                 
                 <div id="modalScoreDetails" class="bg-white/20 p-4 rounded-2xl text-white mb-6 border border-white/30 text-sm space-y-1">
                     <p>⏱️ เวลาที่ใช้: <span id="timeTakenText" class="font-bold text-yellow-300">0.0</span> วินาที</p>
-                    <p>⚡ โบนัสความเร็ว: <span id="speedBonusText" class="font-bold text-emerald-300">+0</span> คะแนน</p>
+                    <p>🖼️ คะแนนรูปภาพ: <span id="speedBonusText" class="font-bold text-emerald-300">0 / 0</span> คะแนน</p>
                     <p class="text-lg font-bold border-t border-white/30 pt-2 mt-2">รวมคะแนนด่านนี้: <span id="levelTotalScoreText" class="text-amber-300">0</span> คะแนน</p>
                 </div>
                 
@@ -423,6 +423,8 @@
         let levelStartTime = 0;
         let levelTimerInterval = null;
         let timeTaken = 0;
+        let currentImageStartTime = 0;
+        let imageScores = [];
 
         // Selected Card State
         let selectedCard = null;
@@ -540,12 +542,27 @@
             const expectedWord = levelData.words[currentTargetIndex];
 
             if (selectedCard.word === expectedWord) {
+                // ให้คะแนนรูปภาพที่วางถูกต้อง: เต็ม 100 หัก 1 คะแนนต่อวินาที
+                const imageElapsedSeconds = Math.max(0, (Date.now() - currentImageStartTime) / 1000);
+                const timePenalty = Math.min(100, Math.floor(imageElapsedSeconds));
+                const earnedImageScore = Math.max(0, 100 - timePenalty);
+
+                imageScores.push({
+                    word: selectedCard.word,
+                    seconds: imageElapsedSeconds,
+                    penalty: timePenalty,
+                    score: earnedImageScore
+                });
+                score += earnedImageScore;
+                scoreDisplay.textContent = score;
+
                 selectedCard.used = true;
                 placedWords[currentTargetIndex] = selectedCard;
                 currentTargetIndex++;
                 selectedCard = null;
+                currentImageStartTime = Date.now();
 
-                updateFeedback(`🎉 ถูกต้อง! เก่งมาก จิ้มคำถัดไปเลย`);
+                updateFeedback(`🎉 ถูกต้อง! ได้ ${earnedImageScore}/100 คะแนน · รูปถัดไปเริ่มจับเวลาแล้ว`);
                 renderGameArea();
 
                 if (currentTargetIndex >= levelData.words.length) {
@@ -562,11 +579,10 @@
             stopTimer();
             gameState = 'LEVEL_CLEAR';
 
-            const baseScore = 100;
-            const speedBonus = Math.max(0, Math.round((30 - timeTaken) * 10));
-            const levelScore = baseScore + speedBonus;
+            // คะแนนด่าน = ผลรวมคะแนนของรูปภาพทุกใบในด่านนี้
+            const levelScore = imageScores.reduce((sum, item) => sum + item.score, 0);
+            const levelMaxScore = roundLevels[currentLevelIndex].words.length * 100;
 
-            score += levelScore;
             levelScores[currentLevelIndex] = levelScore;
             scoreDisplay.textContent = score;
 
@@ -577,8 +593,8 @@
             modalTitle.textContent = `เก่งมาก! ผ่านด่านที่ ${currentLevelIndex + 1}`;
             modalEmoji.textContent = '🎉';
             timeTakenText.textContent = timeTaken.toFixed(1);
-            speedBonusText.textContent = `+${speedBonus}`;
-            levelTotalScoreText.textContent = levelScore;
+            speedBonusText.textContent = `${levelScore} / ${levelMaxScore}`;
+            levelTotalScoreText.textContent = `${levelScore} / ${levelMaxScore}`;
 
             if (currentLevelIndex + 1 >= roundLevels.length) {
                 modalNextBtn.textContent = '🏆 ดูสรุปคะแนนทั้งหมด';
@@ -595,13 +611,13 @@
             startScreen.classList.add('hidden');
             messageModal.classList.remove('hidden');
 
-            const totalPossible = roundLevels.length * 400;
-            const percent = Math.round((score / totalPossible) * 100);
+            const totalPossible = roundLevels.reduce((sum, level) => sum + (level.words.length * 100), 0);
+            const percent = totalPossible > 0 ? Math.round((score / totalPossible) * 100) : 0;
             const rank = percent >= 90 ? 'QUALITY MASTER' : percent >= 75 ? 'QUALITY STAR' : percent >= 50 ? 'QUALITY HERO' : 'QUALITY ROOKIE';
             const breakdown = roundLevels.map((level, idx) => `
                 <div class="flex items-center justify-between gap-3 rounded-xl bg-white/10 px-3 py-2 text-left">
                     <span class="text-white/90">ด่าน ${idx + 1}: ${level.thai}</span>
-                    <strong class="whitespace-nowrap text-amber-300">${levelScores[idx] ?? 0} คะแนน</strong>
+                    <strong class="whitespace-nowrap text-amber-300">${levelScores[idx] ?? 0} / ${level.words.length * 100}</strong>
                 </div>
             `).join('');
 
@@ -626,6 +642,8 @@
         function resetGame() {
             score = 0;
             levelScores = [];
+            imageScores = [];
+            currentImageStartTime = 0;
             scoreDisplay.textContent = '0';
             document.getElementById('modalScoreDetails').innerHTML = originalScoreDetailsHTML;
             modalTitle.textContent = 'ผ่านด่านสำเร็จ!';
@@ -734,6 +752,8 @@
             currentLevelWords.sort(() => Math.random() - 0.5);
 
             placedWords = new Array(levelData.words.length).fill(null);
+            imageScores = [];
+            currentImageStartTime = Date.now();
 
             renderGameArea();
             startTimer();
